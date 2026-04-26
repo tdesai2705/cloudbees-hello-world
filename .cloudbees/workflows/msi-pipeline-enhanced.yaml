@@ -78,7 +78,7 @@ jobs:
   # STAGE 4: NOTIFY QA DEPLOYMENT SUCCESS
   # ============================================
   notify-qa-success:
-    needs: [deploy-qa, performance-test-qa]
+    needs: [build-and-test, deploy-qa, performance-test-qa]
     steps:
       - name: Notify QA deployment success
         run: |
@@ -94,7 +94,7 @@ jobs:
   # STAGE 5: DEPLOY TO STAGING (Using Reusable Workflow)
   # ============================================
   deploy-staging:
-    needs: [deploy-qa, performance-test-qa]
+    needs: [build-and-test, deploy-qa, performance-test-qa]
     uses: ./.cloudbees/workflows/reusable-deploy.yaml
     with:
       image-url: ${{ needs.build-and-test.outputs.image-url }}
@@ -106,7 +106,7 @@ jobs:
   # STAGE 6: NOTIFY STAGING DEPLOYMENT SUCCESS
   # ============================================
   notify-staging-success:
-    needs: deploy-staging
+    needs: [build-and-test, deploy-staging]
     steps:
       - name: Notify staging deployment success
         run: |
@@ -121,7 +121,7 @@ jobs:
   # STAGE 7: APPROVAL GATE FOR PRODUCTION ⭐
   # ============================================
   approve-production:
-    needs: deploy-staging
+    needs: [build-and-test, deploy-staging]
     environment: prod-approval
     steps:
       - name: Request production approval
@@ -159,7 +159,7 @@ jobs:
   # STAGE 9: NOTIFY PRODUCTION DEPLOYMENT SUCCESS
   # ============================================
   notify-prod-success:
-    needs: deploy-prod
+    needs: [build-and-test, deploy-prod]
     steps:
       - name: Notify production deployment success
         run: |
