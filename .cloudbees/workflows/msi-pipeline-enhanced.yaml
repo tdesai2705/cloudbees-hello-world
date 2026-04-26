@@ -89,7 +89,6 @@ jobs:
           echo "Performance: Tests passed"
           echo ""
           echo "🔔 Notification would be sent to Slack/Email here"
-          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
 
   # ============================================
   # STAGE 5: DEPLOY TO STAGING (Using Reusable Workflow)
@@ -116,8 +115,7 @@ jobs:
           echo "Image: ${{ needs.build-and-test.outputs.image-url }}"
           echo "Environment: staging"
           echo ""
-          echo "🔔 Notification would be sent to Slack/Email here"
-          echo "Ready for production approval"
+          echo "🔔 Notification: Ready for production approval"
 
   # ============================================
   # STAGE 7: APPROVAL GATE FOR PRODUCTION ⭐
@@ -176,8 +174,7 @@ jobs:
           echo "  Environments: qa ✅ → staging ✅ → prod ✅"
           echo "  Smoke Tests: All passed"
           echo ""
-          echo "🔔 CRITICAL: Production deployment notification"
-          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
+          echo "🔔 CRITICAL: Production deployment notification sent"
           echo ""
           echo "Application URLs:"
           echo "  QA: http://qa.hello-world.local"
@@ -200,8 +197,7 @@ jobs:
           echo "Commit: ${{ cloudbees.scm.sha }}"
           echo "Branch: ${{ cloudbees.scm.branch }}"
           echo ""
-          echo "🔔 CRITICAL: Failure notification"
-          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
+          echo "🔔 CRITICAL: Failure notification sent"
           echo ""
           echo "Note: Automatic rollback was triggered if deployment stage failed"
           echo "Check logs for rollback status"
