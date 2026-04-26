@@ -62,7 +62,6 @@ jobs:
       - name: Build Docker image
         uses: cloudbees-io/kaniko@v1
         id: build
-        kind: build
         with:
           destination: ${{ inputs.image-name }}:${{ cloudbees.scm.sha }}
           dockerfile: ${{ inputs.dockerfile-path }}
