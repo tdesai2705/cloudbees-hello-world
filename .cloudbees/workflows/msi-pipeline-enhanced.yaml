@@ -1,0 +1,200 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: Enhanced MSI Pipeline with Approval, Rollback, and Performance Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ============================================
+  # STAGE 1: BUILD & TEST (Using Reusable Workflow)
+  # ============================================
+  build-and-test:
+    uses: ./.cloudbees/workflows/reusable-build.yaml
+    with:
+      image-name: docker.io/tejasdesai27/hello-world
+      run-tests: true
+
+  # ============================================
+  # STAGE 2: DEPLOY TO QA (Using Reusable Workflow)
+  # ============================================
+  deploy-qa:
+    needs: build-and-test
+    uses: ./.cloudbees/workflows/reusable-deploy.yaml
+    with:
+      image-url: ${{ needs.build-and-test.outputs.image-url }}
+      environment: qa
+      namespace: tejas-qa
+    secrets: inherit
+
+  # ============================================
+  # STAGE 3: PERFORMANCE TESTING IN QA
+  # ============================================
+  performance-test-qa:
+    needs: deploy-qa
+    environment: qa
+    steps:
+      - name: Checkout code
+        uses: cloudbees-io/checkout@v1
+
+      - name: Set kubeconfig
+        uses: cloudbees-days/setup-kubeconfig
+        with:
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Run performance tests
+        uses: docker://grafana/k6:latest
+        run: |
+          # Get service cluster IP
+          kubectl get svc hello-world -n tejas-qa
+
+          # Port forward in background
+          kubectl port-forward -n tejas-qa svc/hello-world 5000:80 &
+          PF_PID=$!
+          sleep 5
+
+          # Run K6 performance test
+          k6 run --vus 10 --duration 30s performance-test.js
+
+          # Kill port forward
+          kill $PF_PID 2>/dev/null || true
+
+      - name: Publish performance evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Performance Test Results - QA
+            - Environment: qa
+            - Virtual Users: 10
+            - Duration: 30 seconds
+            - Status: Performance tests completed
+            - Thresholds: Checked (p95 < 500ms, error rate < 10%)
+
+  # ============================================
+  # STAGE 4: NOTIFY QA DEPLOYMENT SUCCESS
+  # ============================================
+  notify-qa-success:
+    needs: [deploy-qa, performance-test-qa]
+    steps:
+      - name: Notify QA deployment success
+        run: |
+          echo "✅ QA Deployment Successful!"
+          echo "Image: ${{ needs.build-and-test.outputs.image-url }}"
+          echo "Environment: qa"
+          echo "Performance: Tests passed"
+          echo ""
+          echo "🔔 Notification would be sent to Slack/Email here"
+          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
+
+  # ============================================
+  # STAGE 5: DEPLOY TO STAGING (Using Reusable Workflow)
+  # ============================================
+  deploy-staging:
+    needs: [deploy-qa, performance-test-qa]
+    uses: ./.cloudbees/workflows/reusable-deploy.yaml
+    with:
+      image-url: ${{ needs.build-and-test.outputs.image-url }}
+      environment: staging
+      namespace: tejas-staging
+    secrets: inherit
+
+  # ============================================
+  # STAGE 6: NOTIFY STAGING DEPLOYMENT SUCCESS
+  # ============================================
+  notify-staging-success:
+    needs: deploy-staging
+    steps:
+      - name: Notify staging deployment success
+        run: |
+          echo "✅ Staging Deployment Successful!"
+          echo "Image: ${{ needs.build-and-test.outputs.image-url }}"
+          echo "Environment: staging"
+          echo ""
+          echo "🔔 Notification would be sent to Slack/Email here"
+          echo "Ready for production approval"
+
+  # ============================================
+  # STAGE 7: APPROVAL GATE FOR PRODUCTION ⭐
+  # ============================================
+  approve-production:
+    needs: deploy-staging
+    environment: prod-approval
+    steps:
+      - name: Request production approval
+        run: |
+          echo "⏳ Waiting for production deployment approval..."
+          echo ""
+          echo "Deployment Details:"
+          echo "  Image: ${{ needs.build-and-test.outputs.image-url }}"
+          echo "  Commit: ${{ cloudbees.scm.sha }}"
+          echo "  Branch: ${{ cloudbees.scm.branch }}"
+          echo "  QA Tests: ✅ Passed"
+          echo "  Performance Tests: ✅ Passed"
+          echo "  Staging: ✅ Deployed"
+          echo ""
+          echo "Please review and approve for production deployment."
+
+      - name: Approval granted
+        run: |
+          echo "✅ Production deployment approved!"
+          echo "Proceeding to production..."
+
+  # ============================================
+  # STAGE 8: DEPLOY TO PRODUCTION (Using Reusable Workflow)
+  # ============================================
+  deploy-prod:
+    needs: [approve-production, build-and-test]
+    uses: ./.cloudbees/workflows/reusable-deploy.yaml
+    with:
+      image-url: ${{ needs.build-and-test.outputs.image-url }}
+      environment: prod
+      namespace: tejas-prod
+    secrets: inherit
+
+  # ============================================
+  # STAGE 9: NOTIFY PRODUCTION DEPLOYMENT SUCCESS
+  # ============================================
+  notify-prod-success:
+    needs: deploy-prod
+    steps:
+      - name: Notify production deployment success
+        run: |
+          echo "🚀 PRODUCTION DEPLOYMENT SUCCESSFUL!"
+          echo ""
+          echo "Deployment Details:"
+          echo "  Image: ${{ needs.build-and-test.outputs.image-url }}"
+          echo "  Commit: ${{ cloudbees.scm.sha }}"
+          echo "  Environments: qa ✅ → staging ✅ → prod ✅"
+          echo "  Smoke Tests: All passed"
+          echo ""
+          echo "🔔 CRITICAL: Production deployment notification"
+          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
+          echo ""
+          echo "Application URLs:"
+          echo "  QA: http://qa.hello-world.local"
+          echo "  Staging: http://staging.hello-world.local"
+          echo "  Production: http://prod.hello-world.local"
+
+  # ============================================
+  # STAGE 10: HANDLE FAILURES (Notification)
+  # ============================================
+  notify-failure:
+    if: failure()
+    needs: [build-and-test, deploy-qa, deploy-staging, deploy-prod]
+    steps:
+      - name: Notify deployment failure
+        run: |
+          echo "❌ DEPLOYMENT FAILED!"
+          echo ""
+          echo "Failed Stage: Check workflow logs"
+          echo "Commit: ${{ cloudbees.scm.sha }}"
+          echo "Branch: ${{ cloudbees.scm.branch }}"
+          echo ""
+          echo "🔔 CRITICAL: Failure notification"
+          echo "Slack Webhook: ${{ secrets.SLACK_WEBHOOK_URL || 'Not configured' }}"
+          echo ""
+          echo "Note: Automatic rollback was triggered if deployment stage failed"
+          echo "Check logs for rollback status"

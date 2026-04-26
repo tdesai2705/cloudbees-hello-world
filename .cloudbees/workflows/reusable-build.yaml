@@ -1,0 +1,84 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: Reusable Build and Test
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        required: true
+        type: string
+        description: Name of the Docker image (without tag)
+      dockerfile-path:
+        required: false
+        type: string
+        default: './Dockerfile'
+        description: Path to Dockerfile
+      run-tests:
+        required: false
+        type: boolean
+        default: true
+        description: Whether to run tests
+    outputs:
+      image-url:
+        description: Full Docker image URL with tag
+        value: ${{ jobs.build.outputs.image-url }}
+      image-tag:
+        description: Image tag (commit SHA)
+        value: ${{ jobs.build.outputs.image-tag }}
+
+jobs:
+  build:
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: cloudbees-io/checkout@v1
+
+      # Run unit tests (if enabled)
+      - name: Run unit tests
+        if: ${{ inputs.run-tests }}
+        uses: docker://python:3.11-slim
+        run: |
+          pip install -r requirements-dev.txt
+          pytest test_app.py -v --junitxml=test-results/junit.xml --cov=app
+
+      # Publish test results (if tests were run)
+      - name: Publish test results
+        if: ${{ inputs.run-tests }}
+        uses: cloudbees-io/publish-test-results@v1
+        with:
+          test-type: junit
+          folder-name: test-results
+
+      # Configure Docker credentials
+      - name: Configure Docker credentials
+        uses: cloudbees-io/configure-oci-credentials@v1
+        with:
+          registry: index.docker.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Build Docker image
+      - name: Build Docker image
+        uses: cloudbees-io/kaniko@v1
+        id: build
+        kind: build
+        with:
+          destination: ${{ inputs.image-name }}:${{ cloudbees.scm.sha }}
+          dockerfile: ${{ inputs.dockerfile-path }}
+          labels: version=${{ cloudbees.scm.sha }},environment=build
+
+      # Publish build evidence
+      - name: Publish build evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Build Evidence
+            - Image: ${{ inputs.image-name }}:${{ cloudbees.scm.sha }}
+            - Commit: ${{ cloudbees.scm.sha }}
+            - Branch: ${{ cloudbees.scm.branch }}
+            - Tests: ${{ inputs.run-tests && 'Passed' || 'Skipped' }}
+
+    outputs:
+      image-url: ${{ inputs.image-name }}:${{ cloudbees.scm.sha }}
+      image-tag: ${{ cloudbees.scm.sha }}

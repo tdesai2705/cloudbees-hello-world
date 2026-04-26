@@ -1,0 +1,158 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: Reusable Deploy with Smoke Tests and Rollback
+
+on:
+  workflow_call:
+    inputs:
+      image-url:
+        required: true
+        type: string
+        description: Full Docker image URL with tag
+      environment:
+        required: true
+        type: string
+        description: Target environment (qa/staging/prod)
+      namespace:
+        required: true
+        type: string
+        description: Kubernetes namespace
+      smoke-test-url:
+        required: false
+        type: string
+        description: URL for smoke tests (if available)
+
+jobs:
+  deploy:
+    environment: ${{ inputs.environment }}
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: cloudbees-io/checkout@v1
+
+      # Set kubeconfig
+      - name: Set kubeconfig
+        uses: cloudbees-days/setup-kubeconfig
+        with:
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      # Save previous deployment for rollback
+      - name: Save previous deployment state
+        id: save-state
+        uses: docker://bitnami/kubectl:latest
+        shell: sh
+        run: |
+          echo "Saving current deployment state for potential rollback..."
+          kubectl get deployment hello-world -n ${{ inputs.namespace }} -o yaml > /tmp/previous-deployment.yaml 2>/dev/null || echo "No previous deployment found"
+          PREVIOUS_IMAGE=$(kubectl get deployment hello-world -n ${{ inputs.namespace }} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+          echo "Previous image: $PREVIOUS_IMAGE"
+          echo "PREVIOUS_IMAGE=$PREVIOUS_IMAGE" >> $CLOUDBEES_OUTPUTS/previous-image.txt
+
+      # Deploy to environment
+      - name: Deploy to ${{ inputs.environment }} environment
+        id: deploy
+        uses: docker://bitnami/kubectl:latest
+        kind: deploy
+        shell: sh
+        run: |
+          # Update deployment manifest with image tag
+          sed "s|IMAGE_PLACEHOLDER|${{ inputs.image-url }}|g" k8s/deployment.yaml > /tmp/deployment.yaml
+          sed -i "s|ENV_PLACEHOLDER|${{ inputs.environment }}|g" /tmp/deployment.yaml
+          sed -i "s|VERSION_PLACEHOLDER|${{ inputs.image-url }}|g" /tmp/deployment.yaml
+
+          # Apply to namespace
+          kubectl apply -f /tmp/deployment.yaml -n ${{ inputs.namespace }}
+          kubectl apply -f k8s/service.yaml -n ${{ inputs.namespace }}
+
+          # Wait for rollout
+          echo "Waiting for deployment to complete..."
+          kubectl rollout status deployment/hello-world -n ${{ inputs.namespace }} --timeout=300s
+
+          echo "✅ Deployment to ${{ inputs.environment }} complete!"
+
+      # Run smoke tests
+      - name: Run smoke tests
+        id: smoke-test
+        uses: docker://bitnami/kubectl:latest
+        shell: sh
+        run: |
+          echo "Running smoke tests for ${{ inputs.environment }}..."
+
+          # Wait for pods to be ready
+          kubectl wait --for=condition=ready pod -l app=hello-world -n ${{ inputs.namespace }} --timeout=120s
+
+          # Get pod for testing
+          POD=$(kubectl get pod -l app=hello-world -n ${{ inputs.namespace }} -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing pod: $POD"
+
+          # Test 1: Health endpoint
+          echo "Test 1: Health check..."
+          kubectl exec $POD -n ${{ inputs.namespace }} -- wget -q -O- http://localhost:5000/health | grep -q "healthy" || exit 1
+          echo "✅ Health check passed"
+
+          # Test 2: Version endpoint
+          echo "Test 2: Version check..."
+          kubectl exec $POD -n ${{ inputs.namespace }} -- wget -q -O- http://localhost:5000/version | grep -q "version" || exit 1
+          echo "✅ Version check passed"
+
+          # Test 3: Main endpoint
+          echo "Test 3: Main endpoint..."
+          kubectl exec $POD -n ${{ inputs.namespace }} -- wget -q -O- http://localhost:5000/ | grep -q "Hello from CloudBees Unify" || exit 1
+          echo "✅ Main endpoint passed"
+
+          # Test 4: Check environment variable
+          echo "Test 4: Environment variable check..."
+          kubectl exec $POD -n ${{ inputs.namespace }} -- wget -q -O- http://localhost:5000/ | grep -q "\"environment\":\"${{ inputs.environment }}\"" || exit 1
+          echo "✅ Environment variable correct"
+
+          echo "🎉 All smoke tests passed!"
+
+      # Rollback on failure
+      - name: Rollback on failure
+        if: failure()
+        uses: docker://bitnami/kubectl:latest
+        shell: sh
+        run: |
+          echo "❌ Deployment or smoke tests failed!"
+          echo "Initiating automatic rollback..."
+
+          # Check if there was a previous deployment
+          if kubectl get deployment hello-world -n ${{ inputs.namespace }} >/dev/null 2>&1; then
+            echo "Rolling back to previous version..."
+            kubectl rollout undo deployment/hello-world -n ${{ inputs.namespace }}
+
+            # Wait for rollback to complete
+            kubectl rollout status deployment/hello-world -n ${{ inputs.namespace }} --timeout=180s
+
+            echo "✅ Rollback completed successfully"
+            echo "Previous image has been restored"
+          else
+            echo "No previous deployment found, cleaning up failed deployment..."
+            kubectl delete deployment hello-world -n ${{ inputs.namespace }} 2>/dev/null || true
+          fi
+
+      # Publish deployment evidence
+      - name: Publish deployment evidence
+        if: success()
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Deployment Evidence - ${{ inputs.environment }}
+            - Environment: ${{ inputs.environment }}
+            - Namespace: ${{ inputs.namespace }}
+            - Image: ${{ inputs.image-url }}
+            - Smoke Tests: ✅ Passed (4/4 tests)
+            - Status: Successfully deployed
+
+      # Publish rollback evidence
+      - name: Publish rollback evidence
+        if: failure()
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Rollback Evidence - ${{ inputs.environment }}
+            - Environment: ${{ inputs.environment }}
+            - Namespace: ${{ inputs.namespace }}
+            - Failed Image: ${{ inputs.image-url }}
+            - Status: ❌ Deployment failed, rolled back automatically
+            - Previous state restored
