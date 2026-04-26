@@ -21,6 +21,9 @@ on:
         required: false
         type: string
         description: URL for smoke tests (if available)
+    secrets:
+      KUBECONFIG:
+        required: true
 
 jobs:
   deploy:

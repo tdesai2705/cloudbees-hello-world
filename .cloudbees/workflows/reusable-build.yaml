@@ -19,6 +19,13 @@ on:
         type: boolean
         default: true
         description: Whether to run tests
+    secrets:
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
+      KUBECONFIG:
+        required: false
     outputs:
       image-url:
         description: Full Docker image URL with tag
