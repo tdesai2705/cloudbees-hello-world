@@ -32,6 +32,14 @@ jobs:
           test-type: junit
           folder-name: test-results
 
+      # Configure Docker credentials
+      - name: Configure Docker credentials
+        uses: cloudbees-io/configure-oci-credentials@v1
+        with:
+          registry: index.docker.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
       # Build Docker image
       - name: Build Docker image
         uses: cloudbees-io/kaniko@v1
@@ -39,9 +47,6 @@ jobs:
         with:
           destination: docker.io/tejasdesai27/hello-world:${{ cloudbees.scm.sha }}
           labels: version=${{ cloudbees.scm.sha }},environment=build
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
 
   # ============================================
