@@ -51,85 +51,85 @@ jobs:
       image-tag: ${{ cloudbees.scm.sha }}
 
   # ============================================
-  # STAGE 2: DEPLOY TO DEV
+  # STAGE 2: DEPLOY TO QA
   # ============================================
-  deploy-dev:
+  deploy-qa:
     needs: build-and-test
-    environment: tejas-dev
+    environment: qa
     steps:
       - name: Checkout code
         uses: cloudbees-io/checkout@v1
 
-      - name: Deploy to Dev environment
+      - name: Deploy to QA environment
         uses: cloudbees-io/kubectl-run@v1
         with:
           kubeconfig: ${{ secrets.KUBECONFIG }}
           command: |
             # Update deployment manifest with image tag
             sed -i "s|IMAGE_PLACEHOLDER|docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}|g" k8s/deployment.yaml
-            sed -i "s|ENV_PLACEHOLDER|dev|g" k8s/deployment.yaml
+            sed -i "s|ENV_PLACEHOLDER|qa|g" k8s/deployment.yaml
             sed -i "s|VERSION_PLACEHOLDER|${{ needs.build-and-test.outputs.image-tag }}|g" k8s/deployment.yaml
 
-            # Apply to tejas-dev namespace
-            kubectl apply -f k8s/deployment.yaml -n tejas-dev
-            kubectl apply -f k8s/service.yaml -n tejas-dev
+            # Apply to tejas-qa namespace
+            kubectl apply -f k8s/deployment.yaml -n tejas-qa
+            kubectl apply -f k8s/service.yaml -n tejas-qa
 
             # Wait for rollout
-            kubectl rollout status deployment/hello-world -n tejas-dev --timeout=300s
+            kubectl rollout status deployment/hello-world -n tejas-qa --timeout=300s
 
-      - name: Register deployed artifact - Dev
+      - name: Register deployed artifact - QA
         uses: cloudbees-io/register-deployed-artifact@v1
         with:
           artifact-id: docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}
-          environment: tejas-dev
+          environment: qa
 
       - name: Verify deployment
         uses: cloudbees-io/kubectl-run@v1
         with:
           kubeconfig: ${{ secrets.KUBECONFIG }}
           command: |
-            kubectl get pods -n tejas-dev -l app=hello-world
-            kubectl get svc -n tejas-dev hello-world
+            kubectl get pods -n tejas-qa -l app=hello-world
+            kubectl get svc -n tejas-qa hello-world
 
   # ============================================
-  # STAGE 3: DEPLOY TO TEST (QA)
+  # STAGE 3: DEPLOY TO STAGING
   # ============================================
-  deploy-test:
-    needs: deploy-dev
-    environment: tejas-test
+  deploy-staging:
+    needs: deploy-qa
+    environment: staging
     steps:
       - name: Checkout code
         uses: cloudbees-io/checkout@v1
 
-      - name: Deploy to Test environment
+      - name: Deploy to Staging environment
         uses: cloudbees-io/kubectl-run@v1
         with:
           kubeconfig: ${{ secrets.KUBECONFIG }}
           command: |
             # Update deployment manifest
             sed -i "s|IMAGE_PLACEHOLDER|docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}|g" k8s/deployment.yaml
-            sed -i "s|ENV_PLACEHOLDER|test|g" k8s/deployment.yaml
+            sed -i "s|ENV_PLACEHOLDER|staging|g" k8s/deployment.yaml
             sed -i "s|VERSION_PLACEHOLDER|${{ needs.build-and-test.outputs.image-tag }}|g" k8s/deployment.yaml
 
-            # Apply to tejas-test namespace
-            kubectl apply -f k8s/deployment.yaml -n tejas-test
-            kubectl apply -f k8s/service.yaml -n tejas-test
+            # Apply to tejas-staging namespace
+            kubectl apply -f k8s/deployment.yaml -n tejas-staging
+            kubectl apply -f k8s/service.yaml -n tejas-staging
 
             # Wait for rollout
-            kubectl rollout status deployment/hello-world -n tejas-test --timeout=300s
+            kubectl rollout status deployment/hello-world -n tejas-staging --timeout=300s
 
-      - name: Register deployed artifact - Test
+      - name: Register deployed artifact - Staging
         uses: cloudbees-io/register-deployed-artifact@v1
         with:
           artifact-id: docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}
-          environment: tejas-test
+          environment: staging
 
   # ============================================
   # STAGE 4: APPROVAL GATE FOR PRODUCTION
   # ============================================
   approve-production:
-    needs: deploy-test
-    environment: tejas-prod-approval
+    needs: deploy-staging
+    environment: prod-approval
     steps:
       - name: Wait for approval
         run: |
@@ -143,7 +143,7 @@ jobs:
     needs:
       - approve-production
       - build-and-test
-    environment: tejas-prod
+    environment: prod
     steps:
       - name: Checkout code
         uses: cloudbees-io/checkout@v1
@@ -169,7 +169,7 @@ jobs:
         uses: cloudbees-io/register-deployed-artifact@v1
         with:
           artifact-id: docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}
-          environment: tejas-prod
+          environment: prod
 
       - name: Verify production deployment
         uses: cloudbees-io/kubectl-run@v1
