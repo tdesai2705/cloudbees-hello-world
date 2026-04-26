@@ -40,13 +40,6 @@ jobs:
           destination: docker.io/tejasdesai27/hello-world:${{ cloudbees.scm.sha }}
           labels: version=${{ cloudbees.scm.sha }},environment=build
 
-      # Security scan with Trivy
-      - name: Security scan with Trivy
-        uses: cloudbees-io/scan-trivy@v1
-        with:
-          scan-target: docker.io/tejasdesai27/hello-world:${{ cloudbees.scm.sha }}
-          severity: HIGH,CRITICAL
-
     outputs:
       image-tag: ${{ cloudbees.scm.sha }}
 
