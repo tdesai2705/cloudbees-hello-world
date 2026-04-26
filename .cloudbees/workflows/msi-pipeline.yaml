@@ -125,23 +125,11 @@ jobs:
           environment: staging
 
   # ============================================
-  # STAGE 4: APPROVAL GATE FOR PRODUCTION
-  # ============================================
-  approve-production:
-    needs: deploy-staging
-    environment: prod-approval
-    steps:
-      - name: Wait for approval
-        run: |
-          echo "✅ Approved for production deployment"
-          echo "Image: docker.io/tejasdesai27/hello-world:${{ needs.build-and-test.outputs.image-tag }}"
-
-  # ============================================
-  # STAGE 5: DEPLOY TO PRODUCTION
+  # STAGE 4: DEPLOY TO PRODUCTION
   # ============================================
   deploy-prod:
     needs:
-      - approve-production
+      - deploy-staging
       - build-and-test
     environment: prod
     steps:
