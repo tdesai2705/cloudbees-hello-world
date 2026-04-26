@@ -81,6 +81,7 @@ jobs:
     needs: [build-and-test, deploy-qa, performance-test-qa]
     steps:
       - name: Notify QA deployment success
+        uses: docker://alpine:latest
         run: |
           echo "✅ QA Deployment Successful!"
           echo "Image: ${{ needs.build-and-test.outputs.image-url }}"
@@ -109,6 +110,7 @@ jobs:
     needs: [build-and-test, deploy-staging]
     steps:
       - name: Notify staging deployment success
+        uses: docker://alpine:latest
         run: |
           echo "✅ Staging Deployment Successful!"
           echo "Image: ${{ needs.build-and-test.outputs.image-url }}"
@@ -125,6 +127,7 @@ jobs:
     environment: prod-approval
     steps:
       - name: Request production approval
+        uses: docker://alpine:latest
         run: |
           echo "⏳ Waiting for production deployment approval..."
           echo ""
@@ -139,6 +142,7 @@ jobs:
           echo "Please review and approve for production deployment."
 
       - name: Approval granted
+        uses: docker://alpine:latest
         run: |
           echo "✅ Production deployment approved!"
           echo "Proceeding to production..."
@@ -162,6 +166,7 @@ jobs:
     needs: [build-and-test, deploy-prod]
     steps:
       - name: Notify production deployment success
+        uses: docker://alpine:latest
         run: |
           echo "🚀 PRODUCTION DEPLOYMENT SUCCESSFUL!"
           echo ""
@@ -187,6 +192,7 @@ jobs:
     needs: [build-and-test, deploy-qa, deploy-staging, deploy-prod]
     steps:
       - name: Notify deployment failure
+        uses: docker://alpine:latest
         run: |
           echo "❌ DEPLOYMENT FAILED!"
           echo ""
