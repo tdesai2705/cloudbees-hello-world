@@ -39,6 +39,9 @@ jobs:
         with:
           destination: docker.io/tejasdesai27/hello-world:${{ cloudbees.scm.sha }}
           labels: version=${{ cloudbees.scm.sha }},environment=build
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
 
   # ============================================
