@@ -23,14 +23,14 @@ jobs:
         uses: docker://python:3.11-slim
         run: |
           pip install -r requirements-dev.txt
-          pytest test_app.py -v --cov=app --cov-report=xml
+          pytest test_app.py -v --junitxml=test-results/junit.xml --cov=app
 
       # Publish test results
       - name: Publish test results
         uses: cloudbees-io/publish-test-results@v1
         with:
           test-type: junit
-          test-results-file: ./coverage.xml
+          folder-name: test-results
 
       # Build Docker image
       - name: Build Docker image
