@@ -66,6 +66,7 @@ jobs:
 
       - name: Deploy to QA environment
         uses: docker://bitnami/kubectl:latest
+        kind: deploy
         shell: sh
         run: |
           # Update deployment manifest with image tag
@@ -108,6 +109,7 @@ jobs:
 
       - name: Deploy to Staging environment
         uses: docker://bitnami/kubectl:latest
+        kind: deploy
         shell: sh
         run: |
           # Update deployment manifest
@@ -150,6 +152,7 @@ jobs:
 
       - name: Deploy to Production environment
         uses: docker://bitnami/kubectl:latest
+        kind: deploy
         shell: sh
         run: |
           # Update deployment manifest
