@@ -17,6 +17,7 @@ jobs:
     with:
       image-name: docker.io/tejasdesai27/hello-world
       run-tests: true
+    secrets: inherit
 
   # ============================================
   # STAGE 2: DEPLOY TO QA (Using Reusable Workflow)
